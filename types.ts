@@ -182,3 +182,10 @@ export interface TelephonySettings {
   s3Bucket: string;
   spamProtection: boolean;
 }
+
+export interface WebCallConfig {
+    csrName: string;
+    role: string;
+    description: string;
+    voice: string;
+}

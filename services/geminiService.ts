@@ -25,8 +25,8 @@ export class GeminiLiveClient {
     // Client is initialized in connect()
   }
 
-  // Updated to accept optional custom system prompt
-  async connect(customSystemPrompt?: string) {
+  // Updated to accept optional custom system prompt and voice name
+  async connect(customSystemPrompt?: string, voiceName: string = 'Zephyr') {
     this.disconnect(); // Clean up existing
 
     // Initialize AI Client here to ensure we get the latest process.env.API_KEY
@@ -71,7 +71,7 @@ export class GeminiLiveClient {
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: {
-          voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } },
+          voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } },
         },
         // Use custom prompt if provided, else fallback to default constant
         systemInstruction: customSystemPrompt || LAURENT_SYSTEM_PROMPT,

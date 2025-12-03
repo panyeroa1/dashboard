@@ -1,8 +1,9 @@
 
-import React, { useState, useEffect } from 'react';
-import { Lead, Property, User, Ticket, Invoice, AgentPersona, UserRole, Document, Task, OutboundNumber } from '../types';
+import React, { useState, useEffect, useRef } from 'react';
+import { Lead, Property, User, Ticket, Invoice, AgentPersona, UserRole, Document, Task, OutboundNumber, WebCallConfig } from '../types';
 import { MOCK_NOTIFICATIONS, MOCK_DOCUMENTS, MOCK_EMAILS, MOCK_CAMPAIGNS, AVAILABLE_VOICES, DEFAULT_AGENT_PERSONA, OWNED_NUMBERS, BLAND_AUTH } from '../constants';
 import { db } from '../services/db';
+import { geminiClient } from '../services/geminiService';
 import { 
   User as UserIcon, Phone, Mail, Clock, MapPin, DollarSign, Home, CheckCircle, 
   ChevronRight, Search, Play, Pause, X, Send, PhoneIncoming, 
@@ -10,7 +11,7 @@ import {
   PieChart, Settings, Inbox as InboxIcon, Briefcase, Megaphone, Receipt,
   Menu, ChevronLeft, ChevronDown, Wrench, HardHat, Bell, LogOut, Shield,
   Plus, Filter, Download, ArrowUpRight, ArrowDownLeft, AlertCircle, File, Image as ImageIcon,
-  MessageSquare, BarChart3, Target, Bot, Users, CheckSquare, CalendarDays, Mic, Save, Radio, Globe, Lock
+  MessageSquare, BarChart3, Target, Bot, Users, CheckSquare, CalendarDays, Mic, Save, Radio, Globe, Lock, PhoneCall, AudioLines
 } from 'lucide-react';
 
 interface CRMProps {
@@ -28,13 +29,17 @@ interface CRMProps {
   onUpdateTask: (task: Task) => void;
   agents: AgentPersona[];
   onAgentsChange: (agents: AgentPersona[]) => void;
+  // Volume props for visualizer
+  inputVolume?: number;
+  outputVolume?: number;
 }
 
-type TabType = 'dashboard' | 'leads' | 'properties' | 'notifications' | 'calendar' | 'documents' | 'finance' | 'marketing' | 'analytics' | 'settings' | 'maintenance' | 'requests' | 'my-home' | 'jobs' | 'schedule' | 'invoices' | 'agent-config' | 'inbox' | 'tasks';
+type TabType = 'dashboard' | 'leads' | 'properties' | 'notifications' | 'calendar' | 'documents' | 'finance' | 'marketing' | 'analytics' | 'web-call' | 'maintenance' | 'requests' | 'my-home' | 'jobs' | 'schedule' | 'invoices' | 'agent-config' | 'inbox' | 'tasks';
 
 const CRM: React.FC<CRMProps> = ({ 
     leads, properties, onSelectLead, selectedLeadId, onUpdateLead, currentUser, onLogout,
-    agentPersona, onUpdateAgentPersona, onSwitchUser, tasks, onUpdateTask, agents, onAgentsChange
+    agentPersona, onUpdateAgentPersona, onSwitchUser, tasks, onUpdateTask, agents, onAgentsChange,
+    inputVolume = 0, outputVolume = 0
 }) => {
   const [tab, setTab] = useState<TabType>('dashboard');
   const [noteInput, setNoteInput] = useState('');
@@ -144,118 +149,200 @@ const CRM: React.FC<CRMProps> = ({
       </div>
   );
 
-  // Settings View with Telephony
-  const SettingsView = () => (
-      <div className="animate-in fade-in duration-500 h-full flex flex-col">
-          <div className="mb-6">
-              <h2 className="text-2xl font-bold text-slate-800">Settings</h2>
-              <p className="text-slate-500 text-sm">System configuration and integrations</p>
-          </div>
-          
-          <div className="flex-1 overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row">
-               {/* Settings Sidebar */}
-               <div className="w-full md:w-64 border-b md:border-b-0 md:border-r border-slate-100 p-4">
-                   <div className="space-y-1">
-                       <button className="w-full text-left px-3 py-2 text-sm font-medium rounded-lg bg-indigo-50 text-indigo-700 flex items-center gap-2">
-                           <Phone className="w-4 h-4"/> Telephony
-                       </button>
-                       <button className="w-full text-left px-3 py-2 text-sm font-medium rounded-lg text-slate-600 hover:bg-slate-50 flex items-center gap-2">
-                           <UserIcon className="w-4 h-4"/> Account
-                       </button>
-                       <button className="w-full text-left px-3 py-2 text-sm font-medium rounded-lg text-slate-600 hover:bg-slate-50 flex items-center gap-2">
-                           <Bell className="w-4 h-4"/> Notifications
-                       </button>
-                   </div>
-               </div>
-               
-               {/* Settings Content */}
-               <div className="flex-1 p-8">
-                   <div className="max-w-3xl">
-                       <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
-                           <Globe className="w-5 h-5 text-indigo-600"/> Twilio Number Management
-                       </h3>
-                       
-                       {/* Encrypted Key Selection */}
-                       <div className="mb-8">
-                           <label className="block text-sm font-bold text-slate-700 mb-2">Encrypted Key</label>
-                           <div className="flex gap-3">
-                               <div className="flex-1 p-3 border border-indigo-500 bg-indigo-50 rounded-lg text-sm font-mono text-indigo-700 flex items-center gap-2">
-                                   <Lock className="w-4 h-4"/> {BLAND_AUTH.encryptedKey.substring(0, 8)}...{BLAND_AUTH.encryptedKey.substring(32)}
-                               </div>
-                               <button className="px-4 py-2 border border-slate-300 rounded-lg text-sm font-medium hover:bg-slate-50">Generate New</button>
-                           </div>
-                           <p className="text-xs text-slate-500 mt-2">Active key used for outbound call authentication.</p>
-                       </div>
+  // Web Call View (Replaces Settings)
+  const WebCallView = () => {
+    const [config, setConfig] = useState<WebCallConfig>({
+        csrName: 'Eburon Agent',
+        role: 'Customer Support',
+        description: 'You are a helpful and polite customer support agent for Eburon Real Estate. You help with general inquiries.',
+        voice: 'Zephyr'
+    });
+    const [isCallActive, setIsCallActive] = useState(false);
+    const [callDuration, setCallDuration] = useState(0);
+    const validVoices = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Zephyr'];
 
-                       {/* Number List */}
-                       <div className="mb-8">
-                           <div className="flex justify-between items-center mb-4">
-                               <h4 className="text-sm font-bold text-slate-700">Managed Numbers</h4>
-                               <div className="flex gap-2">
-                                   <button className="text-xs bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-md font-medium text-slate-700 transition-colors">Import Numbers</button>
-                                   <button className="text-xs bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 rounded-md font-medium text-white transition-colors">Buy Number</button>
-                               </div>
-                           </div>
-                           <div className="border border-slate-200 rounded-xl overflow-hidden">
-                               <table className="w-full text-sm text-left">
-                                   <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
-                                       <tr>
-                                           <th className="px-4 py-3">Number</th>
-                                           <th className="px-4 py-3">Label</th>
-                                           <th className="px-4 py-3">Status</th>
-                                           <th className="px-4 py-3 text-right">Action</th>
-                                       </tr>
-                                   </thead>
-                                   <tbody className="divide-y divide-slate-100">
-                                       {OWNED_NUMBERS.map(num => (
-                                           <tr key={num.phoneNumber} className="hover:bg-slate-50">
-                                               <td className="px-4 py-3 font-mono text-slate-700">{num.phoneNumber}</td>
-                                               <td className="px-4 py-3 text-slate-600">{num.label || '-'}</td>
-                                               <td className="px-4 py-3">
-                                                   <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-100">
-                                                       {num.status}
-                                                   </span>
-                                               </td>
-                                               <td className="px-4 py-3 text-right">
-                                                   <button className="text-xs text-slate-400 hover:text-red-500">Remove</button>
-                                               </td>
-                                           </tr>
-                                       ))}
-                                   </tbody>
-                               </table>
-                           </div>
-                       </div>
+    useEffect(() => {
+        let interval: any;
+        if (isCallActive) {
+            interval = setInterval(() => setCallDuration(d => d + 1), 1000);
+        } else {
+            setCallDuration(0);
+        }
+        return () => clearInterval(interval);
+    }, [isCallActive]);
 
-                       {/* AWS Config */}
-                       <div className="border-t border-slate-100 pt-8">
-                           <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-                               <DatabaseIcon className="w-5 h-5 text-amber-600"/> S3 Recording Storage
-                           </h3>
-                           <div className="grid grid-cols-1 gap-4">
-                               <div>
-                                   <label className="block text-sm font-medium text-slate-700 mb-1">AWS Role ARN</label>
-                                   <input type="text" placeholder="arn:aws:iam::123456789012:role/YourRoleName" className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none"/>
-                               </div>
-                               <div className="grid grid-cols-2 gap-4">
-                                   <div>
-                                       <label className="block text-sm font-medium text-slate-700 mb-1">External ID (Read-only)</label>
-                                       <input type="text" value="bland-ext-BMuprQVK04ESxFNqU7jnC_uUmJOTR-qx" readOnly className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-500 font-mono"/>
-                                   </div>
-                                   <div>
-                                       <label className="block text-sm font-medium text-slate-700 mb-1">Bland Account ID (Read-only)</label>
-                                       <input type="text" value="344997732581" readOnly className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-500 font-mono"/>
-                                   </div>
-                               </div>
-                               <div className="mt-2">
-                                   <button className="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-bold hover:bg-slate-900 transition-colors">Save Configuration</button>
-                               </div>
-                           </div>
-                       </div>
-                   </div>
-               </div>
-          </div>
-      </div>
-  );
+    const handleStartCall = async () => {
+        setIsCallActive(true);
+        // Construct System Prompt from fields
+        const systemPrompt = `You are ${config.csrName}.
+Role: ${config.role}
+Context: ${config.description}
+
+You are part of the Eburon system. Be professional, concise, and helpful.`;
+        
+        await geminiClient.connect(systemPrompt, config.voice);
+    };
+
+    const handleEndCall = () => {
+        setIsCallActive(false);
+        geminiClient.disconnect();
+    };
+
+    const formatTime = (secs: number) => {
+        const m = Math.floor(secs / 60).toString().padStart(2, '0');
+        const s = (secs % 60).toString().padStart(2, '0');
+        return `${m}:${s}`;
+    };
+
+    if (isCallActive) {
+        return (
+            <div className="absolute inset-0 z-50 bg-black flex flex-col items-center justify-center overflow-hidden animate-in fade-in duration-500">
+                {/* Orb Visualizer */}
+                <div className="relative w-full flex-1 flex items-center justify-center">
+                    {/* Background Glow */}
+                    <div 
+                        className="absolute w-64 h-64 rounded-full bg-indigo-500 blur-[100px] opacity-30 transition-all duration-75"
+                        style={{ transform: `scale(${1 + Math.max(0, outputVolume * 2)})` }}
+                    />
+                    
+                    {/* The Orb */}
+                    <div className="relative">
+                        {/* Core */}
+                        <div 
+                            className="w-48 h-48 rounded-full bg-gradient-to-tr from-indigo-600 via-purple-500 to-emerald-400 shadow-[0_0_60px_rgba(99,102,241,0.6)] animate-pulse transition-transform duration-75"
+                            style={{ transform: `scale(${1 + Math.max(0, outputVolume)})` }}
+                        ></div>
+                        {/* Ripple Effect */}
+                        <div 
+                             className="absolute inset-0 rounded-full border-2 border-white/20 animate-ping"
+                             style={{ animationDuration: '3s' }}
+                        ></div>
+                         <div 
+                             className="absolute inset-0 rounded-full border border-white/10 animate-ping"
+                             style={{ animationDuration: '2s', animationDelay: '0.5s' }}
+                        ></div>
+                    </div>
+                </div>
+
+                {/* Call Controls & Info */}
+                <div className="w-full pb-16 px-6 flex flex-col items-center gap-8 relative z-10">
+                    <div className="text-center">
+                        <h2 className="text-3xl font-bold text-white mb-2">{config.csrName}</h2>
+                        <p className="text-indigo-300 font-medium text-lg tracking-widest font-mono">{formatTime(callDuration)}</p>
+                    </div>
+
+                    <div className="flex items-center gap-8">
+                        <button className="p-4 bg-white/10 rounded-full text-white/50 hover:bg-white/20 backdrop-blur-md">
+                             <Mic className="w-6 h-6"/>
+                        </button>
+                        <button 
+                            onClick={handleEndCall}
+                            className="w-20 h-20 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(239,68,68,0.4)] transition-transform hover:scale-105 active:scale-95"
+                        >
+                            <PhoneMissed className="w-8 h-8 text-white fill-current"/>
+                        </button>
+                         <button className="p-4 bg-white/10 rounded-full text-white/50 hover:bg-white/20 backdrop-blur-md">
+                             <Settings className="w-6 h-6"/>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="animate-in fade-in duration-500 h-full flex flex-col bg-slate-50">
+            <div className="flex justify-between items-center mb-6">
+                 <div>
+                    <h2 className="text-2xl font-bold text-slate-800">Web Call</h2>
+                    <p className="text-slate-500 text-sm">Configure and launch AI Voice Agent</p>
+                 </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 max-w-2xl mx-auto">
+                    <div className="flex items-center gap-3 mb-8 border-b border-slate-100 pb-6">
+                        <div className="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600">
+                             <Bot className="w-6 h-6"/>
+                        </div>
+                        <div>
+                             <h3 className="font-bold text-lg text-slate-800">Create Caller</h3>
+                             <p className="text-sm text-slate-500">Define the persona for the live session</p>
+                        </div>
+                    </div>
+
+                    <div className="space-y-6">
+                        {/* CSR Name */}
+                        <div>
+                            <label className="block text-sm font-bold text-slate-700 mb-2">CSR Name</label>
+                            <input 
+                                type="text"
+                                value={config.csrName}
+                                onChange={e => setConfig({...config, csrName: e.target.value})}
+                                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-900"
+                                placeholder="e.g. Laurent"
+                            />
+                        </div>
+
+                         {/* Role */}
+                        <div>
+                            <label className="block text-sm font-bold text-slate-700 mb-2">Role</label>
+                            <input 
+                                type="text"
+                                value={config.role}
+                                onChange={e => setConfig({...config, role: e.target.value})}
+                                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-700"
+                                placeholder="e.g. Senior Broker"
+                            />
+                        </div>
+
+                         {/* Voice Selection */}
+                         <div>
+                            <label className="block text-sm font-bold text-slate-700 mb-2">Voice</label>
+                            <div className="grid grid-cols-3 gap-2">
+                                {validVoices.map(v => (
+                                    <button
+                                        key={v}
+                                        onClick={() => setConfig({...config, voice: v})}
+                                        className={`px-3 py-2 rounded-lg text-sm font-medium border transition-all ${
+                                            config.voice === v 
+                                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' 
+                                            : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'
+                                        }`}
+                                    >
+                                        {v}
+                                    </button>
+                                ))}
+                            </div>
+                            <p className="text-xs text-slate-400 mt-2 italic">Standard Gemini Live voices.</p>
+                        </div>
+
+                        {/* Description */}
+                        <div>
+                            <label className="block text-sm font-bold text-slate-700 mb-2">Description & Context</label>
+                            <textarea 
+                                value={config.description}
+                                onChange={e => setConfig({...config, description: e.target.value})}
+                                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm text-slate-700 min-h-[120px] resize-none"
+                                placeholder="Describe the agent's behavior, knowledge base, and tone..."
+                            />
+                        </div>
+
+                        <div className="pt-4">
+                            <button 
+                                onClick={handleStartCall}
+                                className="w-full py-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-bold shadow-lg shadow-indigo-500/30 flex items-center justify-center gap-3 transition-transform active:scale-[0.98]"
+                            >
+                                <PhoneCall className="w-5 h-5"/>
+                                Start Web Call
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+  };
 
   const AgentConfigView = () => {
       // Local state for the form to handle editing before saving
@@ -309,13 +396,6 @@ const CRM: React.FC<CRMProps> = ({
           onUpdateAgentPersona(agent);
       };
 
-      const handleLoadPredefined = (e: React.ChangeEvent<HTMLSelectElement>) => {
-          // This should load from predefined constants (mocked here or passed)
-          // For now, we assume this is handled or we add the logic if PREDEFINED_AGENTS was imported
-          // In the full context, PREDEFINED_AGENTS is available in constants.ts
-          // We will implement if available in context, otherwise skip
-      };
-
       return (
       <div className="animate-in fade-in duration-500 h-[calc(100vh-140px)] flex gap-6">
           {/* Sidebar List of Agents */}
@@ -343,31 +423,6 @@ const CRM: React.FC<CRMProps> = ({
           {/* Configuration Form */}
           <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm p-8 overflow-y-auto">
               <div className="max-w-3xl mx-auto">
-                  
-                  {/* Quick Load Dropdown */}
-                  <div className="mb-6 flex items-center justify-end">
-                      <select 
-                        className="bg-slate-50 border border-slate-200 text-slate-600 text-sm rounded-lg p-2 focus:ring-2 focus:ring-emerald-500 outline-none"
-                        onChange={(e) => {
-                             // This relies on parent passing logic or direct import. 
-                             // Since we can't easily import PREDEFINED_AGENTS here without modifying imports, 
-                             // we'll assume the user uses the sidebar for now or implement in future.
-                        }}
-                      >
-                          <option value="">Quick Load Persona...</option>
-                          <option value="broker">Broker (Laurent)</option>
-                          <option value="sales">Sales (Sarah)</option>
-                          <option value="manager">Manager (David)</option>
-                          <option value="investor">Investor (Marcus)</option>
-                          <option value="reception">Reception (Emma)</option>
-                          <option value="recruiter">Recruiter (Jessica)</option>
-                          <option value="admin">Admin</option>
-                          <option value="tech">Tech</option>
-                          <option value="legal">Legal</option>
-                          <option value="finance">Finance</option>
-                      </select>
-                  </div>
-
                   <div className="flex items-center justify-between mb-8">
                       <div>
                           <h2 className="text-2xl font-bold text-slate-800">Agent Configuration</h2>
@@ -383,7 +438,6 @@ const CRM: React.FC<CRMProps> = ({
                   </div>
 
                   <div className="space-y-6">
-                      
                       {/* Name */}
                       <div>
                           <label className="block text-sm font-bold text-slate-700 mb-2">Agent Name</label>
@@ -424,58 +478,6 @@ const CRM: React.FC<CRMProps> = ({
                               ))}
                           </div>
                       </div>
-
-                      {/* Intro / First Sentence */}
-                      <div>
-                          <label className="block text-sm font-bold text-slate-700 mb-2">Intro (First Sentence)</label>
-                          <textarea 
-                            value={editPersona.firstSentence || ''}
-                            onChange={(e) => setEditPersona({...editPersona, firstSentence: e.target.value})}
-                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all resize-none text-sm text-slate-700"
-                            rows={3}
-                            placeholder="Hi, this is [Name] calling from [Company]..."
-                          />
-                      </div>
-
-                      {/* Roles & Description (System Prompt) */}
-                      <div>
-                          <label className="block text-sm font-bold text-slate-700 mb-2">Roles and Description</label>
-                          <textarea 
-                            value={editPersona.systemPrompt || ''}
-                            onChange={(e) => setEditPersona({...editPersona, systemPrompt: e.target.value})}
-                            className="w-full h-96 p-4 bg-slate-900 text-emerald-400 font-mono text-xs rounded-xl border border-slate-800 focus:border-emerald-500 outline-none resize-none leading-relaxed"
-                            placeholder="You are an expert real estate broker..."
-                          />
-                      </div>
-
-                      {/* Hidden / Advanced Data */}
-                      <div>
-                          <button 
-                            onClick={() => setShowAdvanced(!showAdvanced)}
-                            className="text-xs font-bold text-slate-400 hover:text-emerald-600 flex items-center gap-1"
-                          >
-                              {showAdvanced ? <ChevronDown className="w-3 h-3"/> : <ChevronRight className="w-3 h-3"/>}
-                              {showAdvanced ? 'Hide Advanced Settings' : 'Show Advanced Settings'}
-                          </button>
-                          
-                          {showAdvanced && (
-                              <div className="mt-4 p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-4">
-                                  <div>
-                                      <label className="block text-xs font-bold text-slate-500 mb-1">Model</label>
-                                      <input type="text" value={editPersona.model || 'base'} readOnly className="w-full px-3 py-2 bg-white border border-slate-200 rounded text-sm text-slate-500"/>
-                                  </div>
-                                  <div>
-                                      <label className="block text-xs font-bold text-slate-500 mb-1">Tools</label>
-                                      <input type="text" value={editPersona.tools?.join(', ') || ''} readOnly className="w-full px-3 py-2 bg-white border border-slate-200 rounded text-sm text-slate-500"/>
-                                  </div>
-                                  <div>
-                                      <label className="block text-xs font-bold text-slate-500 mb-1">Temperature</label>
-                                      <input type="text" value="0.6" readOnly className="w-full px-3 py-2 bg-white border border-slate-200 rounded text-sm text-slate-500"/>
-                                  </div>
-                              </div>
-                          )}
-                      </div>
-
                   </div>
               </div>
           </div>
@@ -832,14 +834,6 @@ const CRM: React.FC<CRMProps> = ({
       </div>
   );
 
-  const DatabaseIcon = ({className}: {className:string}) => (
-      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
-          <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
-          <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
-      </svg>
-  )
-
   return (
     <div className="flex flex-col h-full bg-slate-50">
       {/* CRM Header */}
@@ -925,7 +919,7 @@ const CRM: React.FC<CRMProps> = ({
                         <NavItem id="finance" label="Finance" icon={Receipt} />
                         <NavItem id="marketing" label="Marketing" icon={Megaphone} />
                         <NavItem id="analytics" label="Analytics" icon={PieChart} />
-                        <NavItem id="settings" label="Settings" icon={Settings} />
+                        <NavItem id="web-call" label="Web Call" icon={PhoneCall} />
                     </div>
                     <div className="px-3 mt-4"><NavItem id="agent-config" label="Agent Config" icon={Bot} /></div>
                 </>
@@ -980,8 +974,8 @@ const CRM: React.FC<CRMProps> = ({
         <div className="flex-1 flex overflow-hidden bg-slate-50/50 relative">
             
             {/* List / Main View */}
-            <div className={`flex-1 min-w-0 overflow-y-auto no-scrollbar p-4 md:p-8 transition-all duration-300 ${activeLead && currentUser.role === 'BROKER' && tab === 'leads' ? 'hidden lg:block' : 'block'}`}>
-                <div className="max-w-7xl mx-auto h-full">
+            <div className={`flex-1 min-w-0 overflow-y-auto no-scrollbar p-4 md:p-8 transition-all duration-300 ${activeLead && currentUser.role === 'BROKER' && tab === 'leads' ? 'hidden lg:block' : 'block'} ${tab === 'web-call' ? '!p-0' : ''}`}>
+                <div className={`max-w-7xl mx-auto h-full ${tab === 'web-call' ? '!max-w-none' : ''}`}>
                     {tab === 'dashboard' && <DashboardView />}
                     {tab === 'inbox' && <InboxView />}
                     {tab === 'agent-config' && <AgentConfigView />}
@@ -990,7 +984,7 @@ const CRM: React.FC<CRMProps> = ({
                     {tab === 'documents' && <DocumentsView />}
                     {tab === 'finance' && <FinanceView />}
                     {tab === 'tasks' && <TasksView />}
-                    {tab === 'settings' && <SettingsView />}
+                    {tab === 'web-call' && <WebCallView />}
                     {(tab === 'calendar' || tab === 'schedule') && <CalendarView />}
                     {(tab === 'maintenance' || tab === 'requests' || tab === 'jobs') && <MaintenanceView />}
                     
