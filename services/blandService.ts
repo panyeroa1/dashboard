@@ -6,14 +6,19 @@ export class BlandService {
   
   async initiateCall(
     phoneNumber: string, 
-    persona: AgentPersona
+    persona: AgentPersona,
+    fromNumber?: string
   ): Promise<{ status: string, call_id: string, message?: string }> {
     
+    // Sanitize phone number: Remove spaces, dashes, parentheses, etc.
+    // Bland AI expects strictly E.164 format (e.g. +12223334444)
+    const cleanPhoneNumber = phoneNumber.replace(/[\s\-\(\)]/g, '');
+
     // Generate the Laurent De Wilde persona prompt
     const taskPrompt = persona.systemPrompt || generateSystemPrompt(persona);
 
     const payload = {
-      phone_number: phoneNumber,
+      phone_number: cleanPhoneNumber,
       voice: persona.voiceId || BLAND_SETTINGS.voiceId,
       wait_for_greeting: false,
       record: true,
@@ -27,7 +32,7 @@ export class BlandService {
       background_track: "office",
       endpoint: "https://api.bland.ai",
       voicemail_action: "hangup",
-      from: BLAND_SETTINGS.fromNumber,
+      from: fromNumber || BLAND_SETTINGS.fromNumber,
       tools: persona.tools && persona.tools.length > 0 ? persona.tools : BLAND_SETTINGS.tools,
       // We explicitly set the task (System Prompt) and First Sentence
       task: taskPrompt, 
@@ -47,6 +52,11 @@ export class BlandService {
       });
 
       const data = await response.json();
+      
+      if (!response.ok) {
+          throw new Error(data.message || `API Error: ${response.statusText}`);
+      }
+
       return data;
     } catch (error: any) {
       console.error("Bland AI API Call Failed", error);

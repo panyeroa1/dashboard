@@ -1,5 +1,5 @@
 
-import { Lead, Property, Notification, Document, AgentPersona, Email, Campaign, BlandConfig, VoiceOption } from './types';
+import { Lead, Property, Notification, Document, AgentPersona, Email, Campaign, BlandConfig, VoiceOption, OutboundNumber } from './types';
 
 export const LAURENT_SYSTEM_PROMPT = `
 You are **Laurent De Wilde**.
@@ -126,9 +126,16 @@ export const BLAND_AUTH = {
   encryptedKey: '0ec48f6b-9d48-4e8b-b050-c59d7d673a85'
 };
 
+export const OWNED_NUMBERS: OutboundNumber[] = [
+    { phoneNumber: '+17573844229', status: 'Imported', label: 'Main Line (VA)' },
+    { phoneNumber: '+15855153327', status: 'Imported', label: 'Support (NY)' },
+    { phoneNumber: '+15674234720', status: 'Imported', label: 'Sales (OH)' },
+    { phoneNumber: '+17348758838', status: 'Imported', label: 'Direct (MI)' }
+];
+
 export const BLAND_SETTINGS: BlandConfig = {
   voiceId: '55337f4e-482c-4644-b94e-d9671e4d7079',
-  fromNumber: '+15674234720',
+  fromNumber: OWNED_NUMBERS[0].phoneNumber,
   model: 'base',
   language: 'babel',
   tools: [

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { Lead, Property, User, Ticket, Invoice, AgentPersona, UserRole, Document, Task } from '../types';
-import { MOCK_NOTIFICATIONS, MOCK_DOCUMENTS, MOCK_EMAILS, MOCK_CAMPAIGNS, AVAILABLE_VOICES, DEFAULT_AGENT_PERSONA } from '../constants';
+import { Lead, Property, User, Ticket, Invoice, AgentPersona, UserRole, Document, Task, OutboundNumber } from '../types';
+import { MOCK_NOTIFICATIONS, MOCK_DOCUMENTS, MOCK_EMAILS, MOCK_CAMPAIGNS, AVAILABLE_VOICES, DEFAULT_AGENT_PERSONA, OWNED_NUMBERS, BLAND_AUTH } from '../constants';
 import { db } from '../services/db';
 import { 
   User as UserIcon, Phone, Mail, Clock, MapPin, DollarSign, Home, CheckCircle, 
@@ -10,7 +10,7 @@ import {
   PieChart, Settings, Inbox as InboxIcon, Briefcase, Megaphone, Receipt,
   Menu, ChevronLeft, ChevronDown, Wrench, HardHat, Bell, LogOut, Shield,
   Plus, Filter, Download, ArrowUpRight, ArrowDownLeft, AlertCircle, File, Image as ImageIcon,
-  MessageSquare, BarChart3, Target, Bot, Users, CheckSquare, CalendarDays, Mic, Save
+  MessageSquare, BarChart3, Target, Bot, Users, CheckSquare, CalendarDays, Mic, Save, Radio, Globe, Lock
 } from 'lucide-react';
 
 interface CRMProps {
@@ -140,6 +140,119 @@ const CRM: React.FC<CRMProps> = ({
                       </div>
                   </div>
               ))}
+          </div>
+      </div>
+  );
+
+  // Settings View with Telephony
+  const SettingsView = () => (
+      <div className="animate-in fade-in duration-500 h-full flex flex-col">
+          <div className="mb-6">
+              <h2 className="text-2xl font-bold text-slate-800">Settings</h2>
+              <p className="text-slate-500 text-sm">System configuration and integrations</p>
+          </div>
+          
+          <div className="flex-1 overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row">
+               {/* Settings Sidebar */}
+               <div className="w-full md:w-64 border-b md:border-b-0 md:border-r border-slate-100 p-4">
+                   <div className="space-y-1">
+                       <button className="w-full text-left px-3 py-2 text-sm font-medium rounded-lg bg-indigo-50 text-indigo-700 flex items-center gap-2">
+                           <Phone className="w-4 h-4"/> Telephony
+                       </button>
+                       <button className="w-full text-left px-3 py-2 text-sm font-medium rounded-lg text-slate-600 hover:bg-slate-50 flex items-center gap-2">
+                           <UserIcon className="w-4 h-4"/> Account
+                       </button>
+                       <button className="w-full text-left px-3 py-2 text-sm font-medium rounded-lg text-slate-600 hover:bg-slate-50 flex items-center gap-2">
+                           <Bell className="w-4 h-4"/> Notifications
+                       </button>
+                   </div>
+               </div>
+               
+               {/* Settings Content */}
+               <div className="flex-1 p-8">
+                   <div className="max-w-3xl">
+                       <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
+                           <Globe className="w-5 h-5 text-indigo-600"/> Twilio Number Management
+                       </h3>
+                       
+                       {/* Encrypted Key Selection */}
+                       <div className="mb-8">
+                           <label className="block text-sm font-bold text-slate-700 mb-2">Encrypted Key</label>
+                           <div className="flex gap-3">
+                               <div className="flex-1 p-3 border border-indigo-500 bg-indigo-50 rounded-lg text-sm font-mono text-indigo-700 flex items-center gap-2">
+                                   <Lock className="w-4 h-4"/> {BLAND_AUTH.encryptedKey.substring(0, 8)}...{BLAND_AUTH.encryptedKey.substring(32)}
+                               </div>
+                               <button className="px-4 py-2 border border-slate-300 rounded-lg text-sm font-medium hover:bg-slate-50">Generate New</button>
+                           </div>
+                           <p className="text-xs text-slate-500 mt-2">Active key used for outbound call authentication.</p>
+                       </div>
+
+                       {/* Number List */}
+                       <div className="mb-8">
+                           <div className="flex justify-between items-center mb-4">
+                               <h4 className="text-sm font-bold text-slate-700">Managed Numbers</h4>
+                               <div className="flex gap-2">
+                                   <button className="text-xs bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-md font-medium text-slate-700 transition-colors">Import Numbers</button>
+                                   <button className="text-xs bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 rounded-md font-medium text-white transition-colors">Buy Number</button>
+                               </div>
+                           </div>
+                           <div className="border border-slate-200 rounded-xl overflow-hidden">
+                               <table className="w-full text-sm text-left">
+                                   <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
+                                       <tr>
+                                           <th className="px-4 py-3">Number</th>
+                                           <th className="px-4 py-3">Label</th>
+                                           <th className="px-4 py-3">Status</th>
+                                           <th className="px-4 py-3 text-right">Action</th>
+                                       </tr>
+                                   </thead>
+                                   <tbody className="divide-y divide-slate-100">
+                                       {OWNED_NUMBERS.map(num => (
+                                           <tr key={num.phoneNumber} className="hover:bg-slate-50">
+                                               <td className="px-4 py-3 font-mono text-slate-700">{num.phoneNumber}</td>
+                                               <td className="px-4 py-3 text-slate-600">{num.label || '-'}</td>
+                                               <td className="px-4 py-3">
+                                                   <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-100">
+                                                       {num.status}
+                                                   </span>
+                                               </td>
+                                               <td className="px-4 py-3 text-right">
+                                                   <button className="text-xs text-slate-400 hover:text-red-500">Remove</button>
+                                               </td>
+                                           </tr>
+                                       ))}
+                                   </tbody>
+                               </table>
+                           </div>
+                       </div>
+
+                       {/* AWS Config */}
+                       <div className="border-t border-slate-100 pt-8">
+                           <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                               <DatabaseIcon className="w-5 h-5 text-amber-600"/> S3 Recording Storage
+                           </h3>
+                           <div className="grid grid-cols-1 gap-4">
+                               <div>
+                                   <label className="block text-sm font-medium text-slate-700 mb-1">AWS Role ARN</label>
+                                   <input type="text" placeholder="arn:aws:iam::123456789012:role/YourRoleName" className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none"/>
+                               </div>
+                               <div className="grid grid-cols-2 gap-4">
+                                   <div>
+                                       <label className="block text-sm font-medium text-slate-700 mb-1">External ID (Read-only)</label>
+                                       <input type="text" value="bland-ext-BMuprQVK04ESxFNqU7jnC_uUmJOTR-qx" readOnly className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-500 font-mono"/>
+                                   </div>
+                                   <div>
+                                       <label className="block text-sm font-medium text-slate-700 mb-1">Bland Account ID (Read-only)</label>
+                                       <input type="text" value="344997732581" readOnly className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-500 font-mono"/>
+                                   </div>
+                               </div>
+                               <div className="mt-2">
+                                   <button className="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-bold hover:bg-slate-900 transition-colors">Save Configuration</button>
+                               </div>
+                           </div>
+                       </div>
+                   </div>
+               </div>
           </div>
       </div>
   );
@@ -719,6 +832,14 @@ const CRM: React.FC<CRMProps> = ({
       </div>
   );
 
+  const DatabaseIcon = ({className}: {className:string}) => (
+      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+          <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+          <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+      </svg>
+  )
+
   return (
     <div className="flex flex-col h-full bg-slate-50">
       {/* CRM Header */}
@@ -804,6 +925,7 @@ const CRM: React.FC<CRMProps> = ({
                         <NavItem id="finance" label="Finance" icon={Receipt} />
                         <NavItem id="marketing" label="Marketing" icon={Megaphone} />
                         <NavItem id="analytics" label="Analytics" icon={PieChart} />
+                        <NavItem id="settings" label="Settings" icon={Settings} />
                     </div>
                     <div className="px-3 mt-4"><NavItem id="agent-config" label="Agent Config" icon={Bot} /></div>
                 </>
@@ -868,13 +990,14 @@ const CRM: React.FC<CRMProps> = ({
                     {tab === 'documents' && <DocumentsView />}
                     {tab === 'finance' && <FinanceView />}
                     {tab === 'tasks' && <TasksView />}
+                    {tab === 'settings' && <SettingsView />}
                     {(tab === 'calendar' || tab === 'schedule') && <CalendarView />}
                     {(tab === 'maintenance' || tab === 'requests' || tab === 'jobs') && <MaintenanceView />}
                     
-                    {['settings', 'my-home'].includes(tab) && (
+                    {['my-home'].includes(tab) && (
                          <div className="flex flex-col items-center justify-center h-full text-slate-400 p-8 text-center animate-in fade-in duration-500">
                             <Settings className="w-12 h-12 text-slate-300 mb-4" />
-                            <h3 className="text-xl font-bold text-slate-700 mb-2">Settings</h3>
+                            <h3 className="text-xl font-bold text-slate-700 mb-2">My Home</h3>
                             <p className="max-w-md mx-auto">Configuration options available in full version.</p>
                         </div>
                     )}

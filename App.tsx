@@ -154,7 +154,7 @@ const App: React.FC = () => {
       }
   };
 
-  const startCall = async (number: string) => {
+  const startCall = async (number: string, fromNumber?: string) => {
     // 1. Set Ringing State
     setCallState(CallState.RINGING);
     setPendingRecording(null); // Reset prev recording
@@ -174,7 +174,7 @@ const App: React.FC = () => {
 
     // 3. Initiate Call via Bland AI Service
     try {
-        const result = await blandService.initiateCall(number, agentPersona);
+        const result = await blandService.initiateCall(number, agentPersona, fromNumber);
         
         if (result.status === 'success' && result.call_id) {
             console.log("Call Initiated:", result.call_id);

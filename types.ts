@@ -168,3 +168,17 @@ export interface VoiceOption {
   name: string;
   description: string;
 }
+
+export interface OutboundNumber {
+  phoneNumber: string;
+  status: 'Imported' | 'Pending';
+  label?: string;
+}
+
+export interface TelephonySettings {
+  encryptedKey: string;
+  selectedNumber: string;
+  awsRoleArn: string;
+  s3Bucket: string;
+  spamProtection: boolean;
+}

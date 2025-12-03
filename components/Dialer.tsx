@@ -1,11 +1,12 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Phone, Mic, MicOff, PhoneOff, Disc, Delete, Search, User, X, Check, Bot } from 'lucide-react';
-import { CallState, Lead, AgentPersona } from '../types';
+import { Phone, Mic, MicOff, PhoneOff, Disc, Delete, Search, User, X, Check, Bot, ShieldCheck, ChevronDown } from 'lucide-react';
+import { CallState, Lead, AgentPersona, OutboundNumber } from '../types';
+import { OWNED_NUMBERS } from '../constants';
 
 interface DialerProps {
   callState: CallState;
-  onCallStart: (phoneNumber: string) => void;
+  onCallStart: (phoneNumber: string, fromNumber?: string) => void;
   onCallEnd: () => void;
   activeLeadName?: string;
   activeLeadPhone?: string;
@@ -42,6 +43,11 @@ const Dialer: React.FC<DialerProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const [showAgentSelector, setShowAgentSelector] = useState(false);
+  
+  // Telephony State
+  const [selectedFromNumber, setSelectedFromNumber] = useState(OWNED_NUMBERS[0].phoneNumber);
+  const [spamProtection, setSpamProtection] = useState(true);
+  const [showLineSelector, setShowLineSelector] = useState(false);
 
   // Refs for Long Press Logic (0 -> +)
   const longPressTimerRef = useRef<any>(null);
@@ -52,6 +58,22 @@ const Dialer: React.FC<DialerProps> = ({
         setDialNumber(activeLeadPhone);
     }
   }, [activeLeadPhone]);
+  
+  // Local Dialing Logic: Auto-select number if area code matches
+  useEffect(() => {
+      if (dialNumber.length > 3) {
+          // Extract potential area code (e.g., from +1585... -> 585)
+          const clean = dialNumber.replace(/\D/g, '');
+          // Basic heuristic for US numbers
+          if (clean.length >= 10) {
+              const areaCode = clean.startsWith('1') ? clean.substring(1, 4) : clean.substring(0, 3);
+              const match = OWNED_NUMBERS.find(n => n.phoneNumber.includes(areaCode));
+              if (match) {
+                  setSelectedFromNumber(match.phoneNumber);
+              }
+          }
+      }
+  }, [dialNumber]);
 
   useEffect(() => {
     let interval: any;
@@ -223,18 +245,60 @@ const Dialer: React.FC<DialerProps> = ({
                     )}
                 </div>
 
-                {/* Agent Selection Pill */}
-                <button 
-                    onClick={() => setShowAgentSelector(true)}
-                    className="w-full flex items-center justify-between px-3 py-2 bg-white border border-slate-200 rounded-xl shadow-sm hover:border-emerald-300 transition-colors"
-                >
-                    <div className="flex items-center gap-2">
-                        <div className="w-5 h-5 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600">
-                            <Bot className="w-3 h-3"/>
+                {/* Line Selection & Agent */}
+                <div className="grid grid-cols-2 gap-2">
+                    {/* Agent Pill */}
+                    <button 
+                        onClick={() => setShowAgentSelector(true)}
+                        className="w-full flex items-center justify-between px-2 py-2 bg-white border border-slate-200 rounded-xl shadow-sm hover:border-emerald-300 transition-colors"
+                    >
+                        <div className="flex items-center gap-2 overflow-hidden">
+                            <div className="w-5 h-5 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 shrink-0">
+                                <Bot className="w-3 h-3"/>
+                            </div>
+                            <span className="text-xs font-bold text-slate-700 truncate">{selectedAgent?.name.split(' ')[0]}</span>
                         </div>
-                        <span className="text-xs font-bold text-slate-700">Agent: {selectedAgent?.name}</span>
+                    </button>
+
+                    {/* From Line Selector */}
+                    <div className="relative">
+                         <button 
+                            onClick={() => setShowLineSelector(!showLineSelector)}
+                            className="w-full flex items-center justify-between px-2 py-2 bg-white border border-slate-200 rounded-xl shadow-sm hover:border-emerald-300 transition-colors"
+                         >
+                            <div className="flex items-center gap-2 overflow-hidden">
+                                <div className="w-5 h-5 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 shrink-0">
+                                    <Phone className="w-3 h-3"/>
+                                </div>
+                                <span className="text-[10px] font-bold text-slate-700 truncate">{selectedFromNumber.slice(-4)}</span>
+                            </div>
+                            <ChevronDown className="w-3 h-3 text-slate-400"/>
+                        </button>
+                        {showLineSelector && (
+                            <div className="absolute top-full right-0 mt-1 w-48 bg-white rounded-xl shadow-xl border border-slate-200 z-50 overflow-hidden animate-in fade-in zoom-in-95">
+                                <div className="px-3 py-2 bg-slate-50 border-b border-slate-100"><p className="text-[10px] font-bold text-slate-500 uppercase">Outbound Line</p></div>
+                                {OWNED_NUMBERS.map(num => (
+                                    <button
+                                        key={num.phoneNumber}
+                                        onClick={() => { setSelectedFromNumber(num.phoneNumber); setShowLineSelector(false); }}
+                                        className={`w-full text-left px-3 py-2 text-xs hover:bg-slate-50 flex flex-col ${selectedFromNumber === num.phoneNumber ? 'bg-blue-50 text-blue-700' : 'text-slate-600'}`}
+                                    >
+                                        <span className="font-bold">{num.label}</span>
+                                        <span className="text-[10px] opacity-70">{num.phoneNumber}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                     </div>
-                    <span className="text-xs text-emerald-600 font-bold">Change</span>
+                </div>
+                
+                {/* Spam Protection Toggle */}
+                <button 
+                    onClick={() => setSpamProtection(!spamProtection)}
+                    className={`w-full flex items-center justify-center gap-2 py-1.5 rounded-lg text-[10px] font-bold transition-colors ${spamProtection ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}
+                >
+                    <ShieldCheck className="w-3 h-3"/>
+                    {spamProtection ? 'Spam Protection Active' : 'Spam Protection Off'}
                 </button>
 
                 {/* Search Results Overlay */}
@@ -386,7 +450,7 @@ const Dialer: React.FC<DialerProps> = ({
                     </div>
                     <div className="flex justify-center">
                         <button 
-                            onClick={() => onCallStart(dialNumber)}
+                            onClick={() => onCallStart(dialNumber, selectedFromNumber)}
                             disabled={!dialNumber}
                             className="w-[72px] h-[72px] bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-full flex items-center justify-center shadow-lg shadow-emerald-500/30 transition-all transform active:scale-95"
                         >
